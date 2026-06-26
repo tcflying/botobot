@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>botobot 助手</title>
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    (() => {
+      // [启动诊断] 相对页面开始加载的毫秒数；用于定位「页面已显示但一直连接中」卡在哪。
+      const T = () => Math.round(performance.now());
+      console.log(`[boot] 引导脚本开始执行 @ ${T()}ms`);
+      const boot = window.__botobotWsBoot = {
+        queue: [],
+        state: "connecting",
+        ws: null,
+        listeners: [],
+        emitState(state) {
+          this.state = state;
+          for (const fn of this.listeners) {
+            try { fn(state); } catch (_) {}
+          }
+        },
+        onState(fn) {
+          this.listeners.push(fn);
+          fn(this.state);
+        },
+      };
+      try {
+        console.log(`[boot] 即将 new WebSocket @ ${T()}ms`);
+        const ws = new WebSocket(`ws://${location.host}/ws`);
+        console.log(`[boot] WebSocket 对象已创建 @ ${T()}ms（此刻起浏览器应发握手）`);
+        boot.ws = ws;
+        ws.onopen = () => { console.log(`[boot] onopen 已连上 @ ${T()}ms`); boot.emitState("on"); };
+        ws.onclose = () => { console.log(`[boot] onclose @ ${T()}ms`); boot.emitState("off"); };
+        ws.onerror = () => { console.log(`[boot] onerror @ ${T()}ms`); boot.emitState("off"); };
+        ws.onmessage = (event) => boot.queue.push(event.data);
+      } catch (e) {
+        console.log(`[boot] new WebSocket 抛异常 @ ${T()}ms`, e);
+        boot.emitState("off");
+      }
+    })();
+  </script>
+  <script src="tailwind.js"></script>
+  <style type="text/tailwindcss">
+    /* Emerald Forest 调色板(2026-06-18) + Material Design 3 token 体系(2026-06-18 三次):
+     *   表面三层 surface / surface-container / surface-container-high;
+     *   primary 用薄荷绿,primary-container 用深绿(filled-tonal 角色);
+     *   state-layer 用 rgba overlay, hover 8% / pressed 10%。
+     *   taste-skill §3 Rule 2:单 accent 饱和 < 80%, 避 AI blue / Lila ban。*/
+    @theme {
+      --color-canvas: #0c0e0c;
+      --color-surface: #141815;
+      --color-surface-2: #1b201d;
+      --color-fg: #e7ebe6;
+      --color-muted: #8a958c;
+      --color-accent: #5fae8f;
+      --color-ok: #6dc894;
+      --color-err: #d97070;
+      --color-warn: #d9a85a;
+      --radius-composer: 28px;
+      /* MD3 system color role tokens (Emerald Forest 色板映射)
+       * source: https://m3.material.io/styles/color/the-color-system/color-roles */
+      --md-sys-surface: #0c0e0c;
+      --md-sys-surface-c: #141815;
+      --md-sys-surface-c-h: #1b201d;
+      --md-sys-surface-c-hi: #23292c;
+      --md-sys-on-surface: #e7ebe6;
+      --md-sys-on-sfc-var: #8a958c;
+      --md-sys-outline: rgba(231, 235, 230, 0.16);
+      --md-sys-outline-var: rgba(231, 235, 230, 0.32);
+      --md-sys-primary: #5fae8f;
+      --md-sys-on-primary: #0c1f17;
+      --md-sys-primary-c: #1a3a2e;
+      --md-sys-on-primary-c: #a8d8c2;
+      --md-sys-error: #d97070;
+      --md-sys-error-c: #3a1d1d;
+      --md-sys-on-error-c: #f0bcbc;
+      /* MD3 shape scale:full = pill (9999px), large = 16px, medium = 12px, small = 8px */
+      --md-shape-full: 9999px;
+      --md-shape-lg: 16px;
+      --md-shape-md: 12px;
+      --md-shape-sm: 8px;
+    }
+  </style>
+  <style>
+    /* 兜底:不依赖 Tailwind @theme 编译也能让 --thread-width 生效 */
+    :root {
+      --thread-width: 48rem;
+      /* 兜底色:CSS var() 在 var(--color-canvas) 未定义时不会 fallback 到这一层,
+       * 兜底给 style.css 的 var(--color-canvas, #0c0e0c) 用。Tailwind 已注入时这一层会被覆盖。 */
+    }
+    /* 主题切换:跟随系统 prefers-color-scheme,无需 .dark class。
+     * 默认(无 media) = 上方 @theme 注入的暗色 token;
+     * 系统为 light 时整体翻转为亮 token(白底深绿)。
+     * transcript/composer/logs/canvas 都从 token 派生。 */
+    /* §5.5 A5：浅色 token 集——系统浅色(无手动覆盖) 或手动 data-theme="light" 时应用。
+     * 手动 data-theme 用属性选择器(特异性 > 媒体查询里的 :root)，故能压过系统偏好。 */
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) { /* 系统浅色，但手动强制 dark 时不应用 */
+        --color-canvas: #f6f7f4;
+        --color-surface: #ffffff;
+        --color-surface-2: #f0f1ec;
+        --color-fg: #1a1d1a;
+        --color-muted: #5d6660;
+        --color-accent: #2f7a5e;
+        --color-ok: #2e8a5a;
+        --color-err: #b94a4a;
+        --color-warn: #b07a30;
+        --md-sys-surface: #f6f7f4;
+        --md-sys-surface-c: #ffffff;
+        --md-sys-surface-c-h: #eef0eb;
+        --md-sys-surface-c-hi: #e4e7e1;
+        --md-sys-on-surface: #1a1d1a;
+        --md-sys-on-sfc-var: #5d6660;
+        --md-sys-outline: rgba(26, 29, 26, 0.14);
+        --md-sys-outline-var: rgba(26, 29, 26, 0.28);
+        --md-sys-primary: #2f7a5e;
+        --md-sys-on-primary: #ffffff;
+        --md-sys-primary-c: #c7e4d5;
+        --md-sys-on-primary-c: #0c3527;
+        --md-sys-error: #b94a4a;
+        --md-sys-error-c: #f4d6d6;
+        --md-sys-on-error-c: #5a1a1a;
+      }
+    }
+    /* §5.5 A5 手动强制浅色（覆盖系统深色）：与媒体查询同一组浅色 token。 */
+    :root[data-theme="light"] {
+      --color-canvas: #f6f7f4;
+      --color-surface: #ffffff;
+      --color-surface-2: #f0f1ec;
+      --color-fg: #1a1d1a;
+      --color-muted: #5d6660;
+      --color-accent: #2f7a5e;
+      --color-ok: #2e8a5a;
+      --color-err: #b94a4a;
+      --color-warn: #b07a30;
+      --md-sys-surface: #f6f7f4;
+      --md-sys-surface-c: #ffffff;
+      --md-sys-surface-c-h: #eef0eb;
+      --md-sys-surface-c-hi: #e4e7e1;
+      --md-sys-on-surface: #1a1d1a;
+      --md-sys-on-sfc-var: #5d6660;
+      --md-sys-outline: rgba(26, 29, 26, 0.14);
+      --md-sys-outline-var: rgba(26, 29, 26, 0.28);
+      --md-sys-primary: #2f7a5e;
+      --md-sys-on-primary: #ffffff;
+      --md-sys-primary-c: #c7e4d5;
+      --md-sys-on-primary-c: #0c3527;
+      --md-sys-error: #b94a4a;
+      --md-sys-error-c: #f4d6d6;
+      --md-sys-on-error-c: #5a1a1a;
+    }
+    /* 手动强制深色 = @theme 默认值，无需重声明（:root[data-theme="dark"] 不覆盖即继承默认深色）。 */
+    /* §5.5 A5 圆形揭开过渡：startViewTransition 时从点击点放射切换；不支持则瞬切（降级安全）。 */
+    ::view-transition-old(root), ::view-transition-new(root) {
+      animation: none; mix-blend-mode: normal;
+    }
+  </style>
+</head>
+<body class="bg-canvas text-fg font-sans h-screen flex flex-col">
+  <header class="px-5 py-2.5 font-medium flex items-center gap-3">
+    <!-- 左:连接状态徽章(不可点,纯指示器) -->
+    <span id="status" class="status-pill md-btn md-btn--filled-tonal" data-state="connecting" aria-live="polite">
+      <span class="status-pill-dot" aria-hidden="true"></span>
+      <span class="status-pill-text">连接中</span>
+    </span>
+    <script>
+      (() => {
+        const boot = window.__botobotWsBoot;
+        const pill = document.getElementById("status");
+        const text = pill && pill.querySelector(".status-pill-text");
+        if (!boot || !pill || !text) return;
+        boot.onState((state) => {
+          pill.dataset.state = state;
+          text.textContent = state === "on" ? "已连接" : state === "off" ? "未连接" : "连接中";
+        });
+      })();
+    </script>
+    <!-- 中:留白(不放 logo,header 只装状态 + 切换按钮) -->
+    <span class="flex-1" aria-hidden="true"></span>
+    <!-- 右:切换面板的按钮(从左到右;后续要加新面板就在这后面 append) -->
+    <button id="theme-toggle" type="button" class="md-btn md-btn--panel" aria-label="切换主题（跟随系统/深色/浅色）" title="切换主题：跟随系统 → 深色 → 浅色（圆形揭开过渡）">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"/>
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+      </svg>
+      <span>主题</span>
+    </button>
+    <button id="detail-toggle" type="button" class="md-btn md-btn--panel" aria-label="切换详细度（简洁/详细）" aria-pressed="false" title="切换详细度：简洁隐藏调试细节，详细全显（不丢历史、不重渲染）">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M12 5v2M12 17v2M5 12h2M17 12h2"/>
+      </svg>
+      <span>简洁</span>
+    </button>
+    <button id="board-toggle" type="button" class="md-btn md-btn--panel" aria-label="切换团队看板" title="团队看板：Active/Done/Cancelled 三泳道（§5.5 C9）">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="5" height="16" rx="1"/>
+        <rect x="10" y="4" width="5" height="11" rx="1"/>
+        <rect x="17" y="4" width="4" height="7" rx="1"/>
+      </svg>
+      <span>看板</span>
+    </button>
+    <button id="cron-toggle" type="button" class="md-btn md-btn--panel" aria-label="定时任务" title="定时任务：查看/取消所有 cron 后台任务（§2.10）">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="13" r="8"/>
+        <path d="M12 9v4l2 2"/>
+        <path d="M5 3 2 6"/>
+        <path d="m22 6-3-3"/>
+      </svg>
+      <span>定时</span>
+    </button>
+    <button id="logs-toggle" type="button" class="md-btn md-btn--panel logs-toggle-btn" aria-label="切换日志面板" aria-expanded="false">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="4" y1="6" x2="20" y2="6"/>
+        <line x1="4" y1="12" x2="20" y2="12"/>
+        <line x1="4" y1="18" x2="14" y2="18"/>
+      </svg>
+      <span>日志</span>
+    </button>
+    <button id="canvas-toggle" type="button" class="md-btn md-btn--panel" aria-label="切换画布面板" aria-expanded="false">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="4" y="4" width="16" height="16" rx="2"/>
+        <path d="M9 4v16"/>
+        <path d="M15 4v16"/>
+      </svg>
+      <span>画布</span>
+    </button>
+    <button id="browser-toggle" type="button" class="md-btn md-btn--panel" data-cap="browser" aria-label="浏览器投屏" title="浏览器投屏：CDP screencast 实时画面（需 Edge/Chrome）">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <path d="M3 12h18"/>
+        <path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/>
+      </svg>
+      <span>浏览器</span>
+    </button>
+    <button id="market-toggle" type="button" class="md-btn md-btn--panel" aria-label="切换技能市场面板" aria-expanded="false" title="技能市场：浏览/安装/更新/删除 skill">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 9h18l-1.5 11H4.5z"/>
+        <path d="M8 9V6a4 4 0 0 1 8 0v3"/>
+      </svg>
+      <span>市场</span>
+    </button>
+  </header>
+
+  <!--
+    thread 容器:transcript 与 composer 共享同一列宽 var(--thread-width),
+    同一左右 padding。让"消息右边沿 = composer 右边沿"严格成立(右对齐 user 气泡)。
+    `.logs-open` 类由 JS 在抽屉展开时挂上,整个 app-shell 右移。
+  -->
+  <div id="app-shell" class="app-shell">
+  <aside id="nail" class="nail-rail" aria-label="Bot 导航">
+    <button id="default-bot" type="button" class="nail-btn nail-bot-btn" data-bot-id="bot-default" data-active="true" aria-label="botobot" title="botobot">
+      <span class="nail-letter" aria-hidden="true">b</span>
+    </button>
+    <button id="add-bot" type="button" class="nail-btn nail-add-btn" aria-label="添加 bot 目录" title="添加 bot 目录">
+      <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M5 12h14"></path>
+        <path d="M12 5v14"></path>
+      </svg>
+    </button>
+    <div class="nail-spacer" aria-hidden="true"></div>
+    <div class="nail-workdir" title="当前 bot 工作区">D:\botobot</div>
+  </aside>
+
+  <aside id="sessions" class="sessions-sidebar" aria-label="会话列表">
+    <div class="sessions-header">
+      <span>会话</span>
+      <button id="new-session" type="button" class="session-new-btn" aria-label="新建会话">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14"></path>
+          <path d="M12 5v14"></path>
+        </svg>
+      </button>
+    </div>
+    <div id="session-list" class="session-list" role="list"></div>
+    <!-- §5.6 列底 booter：会话列 = 活动会话数。 -->
+    <div id="sessions-booter" class="col-booter" aria-live="polite"></div>
+  </aside>
+
+  <div id="thread" class="flex-1 flex flex-col min-h-0 w-full">
+    <main id="transcript" class="flex-1 min-h-0 overflow-y-auto py-6" style="padding-left: 16px; padding-right: 16px; display: block;"></main>
+    <!-- §5.6 团队群聊视图：选中 nail 栏 team 时显示，隐藏 session transcript -->
+    <main id="team-view" class="flex-1 min-h-0 overflow-y-auto py-6 team-view" hidden></main>
+
+    <div class="pb-4 pt-2 px-4">
+      <form id="composer" autocomplete="off" class="aui-composer-root relative flex w-full max-w-[var(--thread-width)] mx-auto flex-col">
+        <div class="aui-composer-attachment-dropzone unsloth-composer-surface flex flex-col w-full rounded-composer px-3 py-3 outline-none transition-shadow" data-dragging="false">
+          <div id="attachments" class="aui-composer-attachments mb-2 flex w-full flex-row items-center gap-2 overflow-x-auto px-1.5 pt-0.5 pb-1 empty:hidden"></div>
+
+        <!-- 待引导队列(B6/§5.5):忙时输入暂存于此,点「放行」才作为 steer 发出;未放行可逐条删除 -->
+        <div id="pending-steers" class="pending-steers empty:hidden"></div>
+
+        <!-- 永远第一行:textarea(自撑高,占满) -->
+        <textarea
+          id="input"
+          name="input"
+          rows="1"
+          placeholder="输入消息..."
+          aria-label="消息输入框"
+          dir="auto"
+          class="aui-composer-input min-h-10 w-full resize-none overflow-y-auto bg-transparent px-2 py-2 text-[17px] font-normal leading-6 outline-none placeholder:text-muted focus-visible:ring-0"
+        ></textarea>
+
+        <!-- 永远第二行:plus + pills + mic + send -->
+        <div class="aui-composer-action-wrapper mt-1 flex w-full items-center justify-between gap-1">
+          <div class="flex items-center gap-0.5">
+            <button type="button" id="add-attachment" class="composer-icon-btn unsloth-composer-plus flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-fg transition-colors" aria-label="添加附件">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"></path>
+                <path d="M12 5v14"></path>
+              </svg>
+            </button>
+            <input type="file" id="file-input" accept="image/*" class="hidden" multiple />
+
+            <button type="button" class="composer-pill-btn" data-pill="think" data-active="false" aria-label="切换思考">
+              <span class="composer-pill-glyph">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path>
+                  <path d="M9 18h6"></path>
+                  <path d="M10 22h4"></path>
+                </svg>
+                <svg class="composer-pill-x" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"></path>
+                  <path d="m6 6 12 12"></path>
+                </svg>
+              </span>
+              <span>思考</span>
+            </button>
+            <button type="button" class="composer-pill-btn" data-pill="search" data-active="false" aria-label="切换搜索">
+              <span class="composer-pill-glyph">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"></path>
+                  <path d="M2 12h20"></path>
+                </svg>
+                <svg class="composer-pill-x" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"></path>
+                  <path d="m6 6 12 12"></path>
+                </svg>
+              </span>
+              <span>搜索</span>
+            </button>
+            <button type="button" class="composer-pill-btn" data-pill="code" data-active="false" aria-label="切换代码执行">
+              <span class="composer-pill-glyph">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="16 18 22 12 16 6"></polyline>
+                  <polyline points="8 6 2 12 8 18"></polyline>
+                </svg>
+                <svg class="composer-pill-x" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"></path>
+                  <path d="m6 6 12 12"></path>
+                </svg>
+              </span>
+              <span>代码</span>
+            </button>
+            <button type="button" class="composer-pill-btn" data-pill="recall" data-cap="memory" data-active="true" aria-pressed="true" aria-label="切换强制记忆召回">
+              <span class="composer-pill-glyph">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 3.9 2.3 5 .8.8 1.2 1.4 1.2 2.5V18a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1v-.5c0-1.1.4-1.7 1.2-2.5C17.8 12.9 19 11.4 19 9a7 7 0 0 0-7-7Z"></path>
+                  <path d="M9 22h6"></path>
+                </svg>
+                <svg class="composer-pill-x" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18"></path>
+                  <path d="m6 6 12 12"></path>
+                </svg>
+              </span>
+              <span>记忆</span>
+            </button>
+          </div>
+
+          <div class="flex items-center gap-1">
+            <span id="token-usage" class="text-xs text-muted tabular-nums px-1 select-none empty:hidden" title="本轮已用 token / 预算（live）" aria-live="polite"></span>
+            <button type="button" disabled class="composer-icon-btn flex size-8 cursor-pointer items-center justify-center rounded-full text-muted transition-colors disabled:cursor-not-allowed disabled:opacity-40" aria-label="语音输入(暂未启用)">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19v3"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <rect x="9" y="2" width="6" height="13" rx="3"></rect>
+              </svg>
+            </button>
+            <button type="submit" id="send" data-mode="send" class="aui-composer-send size-8 rounded-full inline-flex items-center justify-center bg-accent hover:opacity-90 transition-all disabled:opacity-40 disabled:pointer-events-none" aria-label="发送消息" disabled>
+              <svg class="send-glyph" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m5 12 7-7 7 7"></path>
+                <path d="M12 19V5"></path>
+              </svg>
+              <svg class="stop-glyph" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true">
+                <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      </form>
+
+    </div>
+    <!-- §5.6 列底 booter：对话列 = 上下文用量%（复用 token live）。 -->
+    <div id="thread-booter" class="col-booter" aria-live="polite"></div>
+  </div>
+  <aside id="canvas" class="canvas-panel" aria-label="画布面板" aria-hidden="true">
+    <div class="canvas-header">
+      <span id="canvas-title">画布</span>
+      <button id="canvas-close" type="button" class="canvas-close-btn" aria-label="关闭画布">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 6 6 18"/>
+          <path d="m6 6 12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div id="canvas-body" class="canvas-body">
+      <div class="canvas-empty">
+        <div class="canvas-empty-glyph" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 5h16"/>
+            <path d="M4 12h16"/>
+            <path d="M4 19h10"/>
+          </svg>
+        </div>
+        <div class="canvas-empty-title">暂无画布内容</div>
+        <div class="canvas-empty-hint">尚未选择资源。</div>
+      </div>
+    </div>
+    <!-- §5.6 列底 booter：画布列 = 画布状态。 -->
+    <div id="canvas-booter" class="col-booter" aria-live="polite"></div>
+  </aside>
+  <!--
+    §1.6 S5 技能市场面板：右侧抽屉（同 canvas 机制，flex 子项展宽）。
+    上方=源配置（选/加远端源；空选=看本地已装）；下方=catalog 列表，每项装/更/删按钮。
+    全部接已有后端：/api/skills · /api/market/sources · /api/market/catalog · /api/market/install。
+  -->
+  <aside id="market" class="market-panel" aria-label="技能市场" aria-hidden="true">
+    <div class="market-header">
+      <span>技能市场</span>
+      <div class="market-header-actions">
+        <button id="market-refresh" type="button" class="canvas-close-btn" aria-label="刷新" title="刷新">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>
+          </svg>
+        </button>
+        <button id="market-close" type="button" class="canvas-close-btn" aria-label="关闭市场">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="market-body">
+      <div class="market-sources">
+        <select id="market-source" class="market-input" aria-label="市场源">
+          <option value="">本地已装</option>
+        </select>
+        <div class="market-source-add">
+          <input id="market-source-name" class="market-input" placeholder="源名" aria-label="源名" />
+          <input id="market-source-url" class="market-input" placeholder="http://host:8788" aria-label="源地址" />
+          <button id="market-add-source" type="button" class="md-btn md-btn--filled-tonal">加源</button>
+        </div>
+      </div>
+      <div id="market-list" class="market-list" role="list"></div>
+      <div id="market-empty" class="market-empty" hidden>
+        <div class="canvas-empty-glyph" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9h18l-1.5 11H4.5z"/><path d="M8 9V6a4 4 0 0 1 8 0v3"/>
+          </svg>
+        </div>
+        <div class="canvas-empty-title">暂无 skill</div>
+        <div class="canvas-empty-hint">选一个市场源拉取，或在本地 skills/ 放置。</div>
+      </div>
+    </div>
+  </aside>
+  <!-- §5.5 C11 bot 属性面板：点 active bot 打开。当前「笼子」tab（身份+计数，来自 /api/bots/:id/info）；
+       bot.md 编辑 / 工具 / subagent 三 tab 为后续。 -->
+  <aside id="botinfo" class="market-panel" aria-label="Bot 属性" aria-hidden="true">
+    <div class="market-header">
+      <span>Bot 属性</span>
+      <button id="botinfo-close" type="button" class="canvas-close-btn" aria-label="关闭">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+      </button>
+    </div>
+    <div class="market-body">
+      <div class="botinfo-tabs" role="tablist">
+        <button class="botinfo-tab" data-tab="cage" data-active="true" role="tab">笼子</button>
+        <button class="botinfo-tab" data-tab="tools" role="tab">工具</button>
+        <button class="botinfo-tab" data-tab="sub" role="tab">subagent</button>
+        <button class="botinfo-tab" data-tab="md" role="tab" title="只读，编辑待写回端点">bot.md</button>
+      </div>
+      <div id="botinfo-body" class="botinfo-body"></div>
+    </div>
+  </aside>
+  <!-- §5.5 C9 团队看板：全屏模态，3 泳道 Active/Done/Cancelled，读 /api/teams 快照。
+       甘特/参与者状态图为后续；本步先卡片化快照。 -->
+  <div id="board" class="board-overlay" aria-hidden="true" role="dialog" aria-label="团队看板">
+    <div class="board-modal">
+      <div class="board-header">
+        <span>团队看板</span>
+        <button id="board-new-team" type="button" class="board-new-btn">+ 新建 team</button>
+        <button id="board-close" type="button" class="canvas-close-btn" aria-label="关闭看板">
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div id="board-lanes" class="board-lanes"></div>
+    </div>
+  </div>
+  </div>
+
+  <!--
+    日志抽屉：默认折叠,贴左边缘;展开时把 app-shell 整体右移 (CSS 控制)。
+    内容区 `#logs-list` 由 app.js 增量 append。每条带 .level 染色。
+  -->
+  <aside id="logs" class="logs-drawer" aria-hidden="true">
+    <div class="logs-header">
+      <span>日志</span>
+      <span class="logs-header-meta" id="logs-meta">0 条</span>
+    </div>
+    <!-- 截断角标:LOGS_MAX 满时由 app.js 取消 hidden -->
+    <div id="logs-truncated" class="logs-truncated-banner" hidden>
+      <span>最早的日志已被截断,以保持面板响应速度</span>
+      <button type="button" id="logs-clear-inline">全部清空</button>
+    </div>
+    <div id="logs-list" class="logs-list" role="log" aria-live="polite"></div>
+    <!-- Empty state:抽屉打开但 0 条日志时显示 -->
+    <div id="logs-empty" class="logs-empty" hidden>
+      <div class="logs-empty-glyph" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h7"/>
+        </svg>
+      </div>
+      <div class="logs-empty-title">暂无日志</div>
+      <div class="logs-empty-hint">服务器活动将在连接建立后实时显示在此。</div>
+    </div>
+    <div class="logs-footer">
+      <button id="logs-clear" type="button" class="logs-clear-btn" aria-label="清空日志" disabled>清空</button>
+    </div>
+  </aside>
+
+  <script src="marked.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

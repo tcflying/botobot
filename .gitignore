@@ -1,0 +1,23 @@
+# Rust
+/target/
+**/target/
+
+# 模型缓存
+/.modelcache/
+**/.modelcache/
+
+# 环境与密钥
+.env
+.env.*
+*.pem
+*.key
+
+# 日志与数据
+*.log
+*.db
+*.sqlite*
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

@@ -1,0 +1,79 @@
+[package]
+name = "webui-bin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# bots = 本地全权工作台，需 full（重依赖：agent 栈 + candle 嵌入 + browser）。
+[[bin]]
+name = "bots"
+path = "src/main.rs"
+required-features = ["full"]
+
+# §1.6 S4：远端只读市场服务端。可 `--no-default-features` 构建出不含 ML/agent 栈的精简二进制。
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[features]
+# officecli 并入默认：薄壳工具**零依赖成本**（仅注册两个 shell-out 工具，二进制运行时检测、缺则优雅报错），
+# 用户重度使用（多个 officecli-* skill）——默认暴露让其 skill 在标准 bots.exe 即可用。pdf/browser 仍按需
+# （各拉真依赖：pdf-inspector / tokio-tungstenite+Chrome）。
+default = ["full", "officecli"]
+# chat = 远端只读站「助手半边」所需的 agent 栈（无 candle/team/mcp/browser）——
+# server bin 可 `--no-default-features --features chat` 构建出含对话、不含 ML/团队/浏览器的中量二进制。
+chat = ["dep:agent-infer", "dep:agent-loop", "dep:agent-observe"]
+# full = 本地工作台全量（含 chat + candle 嵌入 + 团队 + MCP + browser）。
+full = [
+    "chat",
+    "dep:model-embed",
+    "dep:team-core",
+    "dep:bot-api",
+    "dep:bot-sdk",
+    "dep:bot-mcp",
+    "dep:webbrowser",
+]
+# §4.6 浏览器 CDP 工具（browser_navigate/snapshot/click）——默认关：需真 Chrome + 网络栈。
+# 构建：`cargo build -p webui-bin --features browser`（含 full）。
+browser = ["full", "agent-act/browser"]
+# §4.7 OfficeCLI 薄壳工具（officecli_view/raw）——默认关：需 officecli 二进制在场。
+officecli = ["full"]
+# §4.8 PDF 解读工具（pdf_read）——默认关：纯 Rust pdf-inspector。
+pdf = ["full", "agent-act/pdf"]
+# §⓪[B] brush 纯 Rust bash 内核——默认关（拉 brush-core 重栈）。开后运行期 BOTOBOT_SHELL=brush 选用，
+# 否则仍走系统 powershell/sh。构建：`cargo build -p webui-bin --features brush`（含 full）。
+brush = ["full", "agent-act/brush"]
+
+[dependencies]
+# server bin 必需（轻）：skill 仓库 + HTTP 壳 + 静态托管 + 运行时。
+agent-act.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true }
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dotenvy.workspace = true
+# full（bots）专属重依赖：可选，由 `full` feature 拉入。
+agent-infer = { workspace = true, optional = true }
+agent-loop = { workspace = true, optional = true }
+agent-observe = { workspace = true, optional = true }
+model-embed = { workspace = true, optional = true }
+team-core = { workspace = true, optional = true }
+bot-api = { workspace = true, optional = true }
+bot-sdk = { workspace = true, optional = true }
+bot-mcp = { workspace = true, optional = true }
+webbrowser = { workspace = true, optional = true }
+# 小依赖，bots 路径用（server 也链接，开销可忽略）。
+base-types.workspace = true
+toml.workspace = true
+base64.workspace = true
+futures.workspace = true
+include_dir = "0.7"
+
+[dev-dependencies]
+async-trait.workspace = true
+reqwest.workspace = true

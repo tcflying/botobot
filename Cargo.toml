@@ -1,0 +1,87 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/base-types",
+    "crates/model-embed",
+    "crates/agent-infer",
+    "crates/agent-act",
+    "crates/agent-observe",
+    "crates/agent-loop",
+    "crates/team-core",
+    "crates/bot-api",
+    "crates/bot-sdk",
+    "crates/bot-mcp",
+    "crates/webui-bin",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+authors = ["botobot"]
+
+[workspace.dependencies]
+# 异步运行时
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+tokio-stream = "0.1"
+# HTTP server / client
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+# 浏览器
+webbrowser = "1"
+# 序列化 / schema
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "0.8"
+toml = "0.8"
+base64 = "0.22"
+# 错误处理
+thiserror = "1"
+anyhow = "1"
+# 异步 trait / 流
+async-trait = "0.1"
+async-stream = "0.3"
+futures = "0.3"
+# §4.6 浏览器 CDP（agent-act 的 browser feature 才拉，默认构建不引入）
+tokio-tungstenite = "0.24"
+# §4.8 PDF 解读引擎（Firecrawl pdf-inspector，纯 Rust，单依赖 lopdf，守「无 C 依赖」；agent-act 的
+# pdf feature 才拉）——分类(文字/扫描/图片/混合)+逐页 OCR 路由 + 直出 Markdown(标题/表格/多栏)。
+pdf-inspector = "0.1"
+# §1.8.3④ 向量 ANN（纯 Rust HNSW，守「无 C 依赖」；agent-act 的 hnsw feature 才拉）
+instant-distance = "0.6"
+# 工具
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+dotenvy = "0.15"
+dashmap = "6"
+tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-regex"] }
+sha2 = "0.10"
+ignore = "0.4"
+globset = "0.4"
+regex = "1"
+
+# 内部 crate（平铺 + 前缀分层；无 -layer 目录、无 -tech 后缀）
+base-types = { path = "crates/base-types" }
+model-embed = { path = "crates/model-embed" }
+agent-infer = { path = "crates/agent-infer" }
+agent-act = { path = "crates/agent-act" }
+agent-observe = { path = "crates/agent-observe" }
+agent-loop = { path = "crates/agent-loop" }
+team-core = { path = "crates/team-core" }
+bot-api = { path = "crates/bot-api" }
+bot-sdk = { path = "crates/bot-sdk" }
+bot-mcp = { path = "crates/bot-mcp" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev]
+opt-level = 0
+incremental = true

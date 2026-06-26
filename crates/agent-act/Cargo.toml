@@ -1,0 +1,52 @@
+[package]
+name = "agent-act"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "agent_act"
+path = "src/lib.rs"
+
+[dependencies]
+base-types.workspace = true
+async-trait.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio = { workspace = true }
+tokio-util.workspace = true
+reqwest.workspace = true
+tokenizers.workspace = true
+sha2.workspace = true
+base64.workspace = true
+ignore.workspace = true
+globset.workspace = true
+regex.workspace = true
+half = "2"
+futures.workspace = true
+tracing.workspace = true
+# §4.6 browser feature 才拉（默认构建不引入这条网络栈，守「不预付」）。
+tokio-tungstenite = { workspace = true, optional = true }
+# §4.8 pdf feature 才拉（纯 Rust PDF 引擎：分类 + 直出 Markdown）。
+pdf-inspector = { workspace = true, optional = true }
+# §1.8.3④ hnsw feature 才拉（纯 Rust 向量 ANN）。
+instant-distance = { workspace = true, optional = true }
+# §⓪[B] brush feature 才拉（纯 Rust bash 解释器，统一 OS shell 语义）；默认构建不引入这条重栈。
+brush-core = { version = "0.3.5", optional = true }
+
+[features]
+# §4.6 浏览器 CDP 实连（WS + Chrome 启动）；默认关。cdp 调度核心(transport-agnostic)恒在。
+browser = ["dep:tokio-tungstenite"]
+# §4.8 PDF 解读（分类 + Markdown 抽取）；默认关。
+pdf = ["dep:pdf-inspector"]
+# §1.8.3④ 向量 ANN（HNSW）；默认关（小规模 cosine 已足，规模触发再开）。
+hnsw = ["dep:instant-distance"]
+# §⓪[B] brush 纯 Rust bash 内核（跨平台一致 shell 语义）；默认关。开后运行期 BOTOBOT_SHELL=brush 选用。
+brush = ["dep:brush-core"]
+
+[dev-dependencies]
+tokio = { workspace = true }
+uuid.workspace = true

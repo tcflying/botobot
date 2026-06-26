@@ -1,0 +1,21 @@
+[package]
+name = "bot-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "bot_sdk"
+path = "src/lib.rs"
+
+[dependencies]
+agent-loop.workspace = true
+base-types.workspace = true
+bot-api.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+futures.workspace = true
