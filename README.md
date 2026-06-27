@@ -45,6 +45,16 @@ botobot = 通用 agent harness(harness 第一,场景第二)
 
 **一句话:危险的判断它替你扛(沙箱式执行策略),复杂的编排它替你想(leader 自动拆活),你只管像聊天一样提需求。**
 
+#### 📑 还能帮你「做 Office」—— Word / Excel / PPT 一句话搞定
+
+更接地气的是:botobot 集成了 **OfficeCLI**,能直接读写 `.docx / .xlsx / .pptx`。你不用打开 Office、不用会函数、不用懂 VBA —— **像发消息一样吩咐一句,它就动手做表、写文档、排幻灯片**:
+
+- *"把这个 Excel 第二列汇总一下,生成一张月度报表"* —— 它读结构、改单元格、出表
+- *"按这份大纲做一个 10 页的 PPT"* —— 它用节点寻址 DSL(`/slide[1]`)逐页搭幻灯片
+- *"看看这份 Word 的章节结构"* —— `officecli_view` 只读概览,不动原文
+
+工程上很克制:`view/get/query` 是 **Read 级**(不打断你),`edit/raw` 是 **Exec 级**(走沙箱审批);officecli 二进制当成 vendored 黑盒(类比 ripgrep/git),**下载的 exe 原样丢进 `.bot/bin/` 即可、免改名**,跨平台自动定位。**普通办公族也能让 AI 替自己处理一整天的表格和文档。**
+
 > 想更省事还有 `+` 号开 bot —— 先选模板(通用助手 ✨ / 编程 bot ⌨)再选目录,**点几下就有一个新助手上岗**,跟在 IM 里加好友一样自然。
 
 ---
@@ -164,7 +174,7 @@ agent.with_system(prompt)   // 只换角色 prompt(编程 SOP ↔ 通用助手)
 | **IDE 语义** | LSP(diagnostics/references/rename) · DAP(断点/单步/变量/数据断点) |
 | **执行** | 沙箱式 shell · 后台长任务(`shell_background`/`job_status`) · 可选纯 Rust brush 内核(持久会话/Windows 路径翻译) |
 | **浏览器** | Chrome CDP 调度 · 浏览/截图/点击/填充 · 页面投屏 |
-| **文档** | PDF 解读 · Skill 程序性知识 · Book 权威资料 · officecli |
+| **办公文档** | **OfficeCLI 操作 Word / Excel / PPT(读写 .docx/.xlsx/.pptx)** · PDF 解读(分类+OCR+直出 MD) · Skill 程序性知识 · Book 权威资料 |
 | **多 Agent** | 递归子 agent(editor/reader 专役) · Team 编排 · TaskPlanner 并行 · durable subsession 落盘 |
 | **集成** | MCP server · cron 定时(心跳驱动) · Skill 市场 · bot 市场 |
 | **可靠性** | 流恢复 · 崩溃恢复(turn-scratch) · 无损压缩 · 优雅取消 · HTTP 超时兜底 |
